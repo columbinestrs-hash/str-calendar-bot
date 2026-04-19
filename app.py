@@ -6,22 +6,20 @@ from datetime import datetime, timedelta
 import uuid
 
 app = Flask(__name__)
-
-# In-memory store for generated images
 image_store = {}
 
-def generate_calendar(year, month, bookings):
-    cell_w = 110
+def generate_calendar(year, month, bookings, property_name=''):
+    padding = 20
+    img_w = 800
+    cell_w = (img_w - padding * 2) // 7  # 108px, fits exactly
     cell_h = 80
-    header_h = 60
+    header_h = 70
     day_label_h = 30
     cols = 7
-    padding = 20
 
     first_weekday, days_in_month = calendar.monthrange(year, month)
     rows = ((first_weekday + days_in_month) + 6) // 7
 
-    img_w = cols * cell_w + padding * 2
     img_h = header_h + day_label_h + rows * cell_h + padding * 2 + 30
 
     img = Image.new('RGB', (img_w, img_h), '#FFFFFF')
@@ -29,15 +27,19 @@ def generate_calendar(year, month, bookings):
 
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
-        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 15)
+        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
         font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
+        font_sub = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
     except Exception:
         font = ImageFont.load_default()
         font_bold = font
         font_small = font
+        font_sub = font
 
     month_name = datetime(year, month, 1).strftime('%B %Y')
-    draw.text((img_w // 2, padding + 10), month_name, fill='#1a1a1a', font=font_bold, anchor='mm')
+    draw.text((img_w // 2, padding + 12), month_name, fill='#1a1a1a', font=font_bold, anchor='mm')
+    if property_name:
+        draw.text((img_w // 2, padding + 32), property_name, fill='#888888', font=font_sub, anchor='mm')
 
     days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     for i, day in enumerate(days):
@@ -145,8 +147,9 @@ def calendar_image():
         year = int(data.get('year', datetime.now().year))
         month = int(data.get('month', datetime.now().month))
         bookings = data.get('bookings', [])
+        property_name = data.get('property_name', '')
 
-        buf = generate_calendar(year, month, bookings)
+        buf = generate_calendar(year, month, bookings, property_name)
 
         image_id = str(uuid.uuid4())
         image_store[image_id] = buf.getvalue()
