@@ -1,14 +1,12 @@
-from flask import Flask, request, send_file
+from flask import Flask, request, send_file, jsonify
 import calendar
 from PIL import Image, ImageDraw, ImageFont
 import io
-from datetime import datetime
-import json
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
 def generate_calendar(year, month, bookings):
-    # Canvas settings
     cell_w, cell_h = 110, 80
     header_h = 60
     day_label_h = 30
@@ -19,7 +17,7 @@ def generate_calendar(year, month, bookings):
     rows = ((first_weekday + days_in_month) + 6) // 7
 
     img_w = cols * cell_w + padding * 2
-    img_h = header_h + day_label_h + rows * cell_h + padding * 2
+    img_h = header_h + day_label_h + rows * cell_h + padding * 2 + 30
 
     img = Image.new('RGB', (img_w, img_h), '#FFFFFF')
     draw = ImageDraw.Draw(img)
@@ -28,7 +26,7 @@ def generate_calendar(year, month, bookings):
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
         font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 15)
         font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
-    except:
+    except Exception:
         font = ImageFont.load_default()
         font_bold = font
         font_small = font
@@ -44,26 +42,29 @@ def generate_calendar(year, month, bookings):
 
     booking_map = {}
     for b in bookings:
-        start = datetime.strptime(b['start'], '%Y-%m-%d')
-        end = datetime.strptime(b['end'], '%Y-%m-%d')
-        color = b.get('color', '#B5D4F4')
-        text_color = b.get('text_color', '#0C447C')
-        label = b.get('label', '')
-        d = start
-        while d < end:
-            if d.month == month and d.year == year:
-                day_num = d.day
-                if day_num not in booking_map:
-                    booking_map[day_num] = []
-                booking_map[day_num].append({
-                    'color': color,
-                    'text_color': text_color,
-                    'label': label,
-                    'is_start': d == start,
-                    'is_end': (end - d).days == 1
-                })
-            from datetime import timedelta
-            d += timedelta(days=1)
+        try:
+            start = datetime.strptime(b['start'], '%Y-%m-%d')
+            end = datetime.strptime(b['end'], '%Y-%m-%d')
+            color = b.get('color', '#B5D4F4')
+            text_color = b.get('text_color', '#0C447C')
+            label = b.get('label', 'Guest')
+            d = start
+            while d < end:
+                if d.month == month and d.year == year:
+                    day_num = d.day
+                    if day_num not in booking_map:
+                        booking_map[day_num] = []
+                    booking_map[day_num].append({
+                        'color': color,
+                        'text_color': text_color,
+                        'label': label,
+                        'is_start': d == start,
+                        'is_end': (end - d).days == 1
+                    })
+                d += timedelta(days=1)
+        except Exception as e:
+            print(f"Booking parse error: {e}")
+            continue
 
     today = datetime.now()
 
@@ -76,9 +77,10 @@ def generate_calendar(year, month, bookings):
 
         is_today = (day == today.day and month == today.month and year == today.year)
         border_color = '#378ADD' if is_today else '#E0E0E0'
-        draw.rectangle([x+1, y+1, x+cell_w-1, y+cell_h-1], outline=border_color, width=2 if is_today else 1)
-
-        draw.text((x + 8, y + 8), str(day), fill='#378ADD' if is_today else '#555555', font=font)
+        draw.rectangle([x+1, y+1, x+cell_w-1, y+cell_h-1],
+                      outline=border_color, width=2 if is_today else 1)
+        draw.text((x + 8, y + 8), str(day),
+                 fill='#378ADD' if is_today else '#555555', font=font)
 
         if day in booking_map:
             for slot, bk in enumerate(booking_map[day]):
@@ -92,15 +94,13 @@ def generate_calendar(year, month, bookings):
                              fill=bk['text_color'], font=font_small)
 
     legend_y = img_h - 20
-    legends = [
-        ('#B5D4F4', 'New booking'),
-        ('#C0DD97', 'Existing booking'),
-    ]
+    legends = [('#B5D4F4', 'New booking'), ('#C0DD97', 'Existing booking')]
     lx = padding
     for color, label in legends:
         draw.rectangle([lx, legend_y - 10, lx + 12, legend_y + 2], fill=color)
-        draw.text((lx + 16, legend_y - 4), label, fill='#888888', font=font_small, anchor='lm')
-        lx += 130
+        draw.text((lx + 16, legend_y - 4), label, fill='#888888',
+                 font=font_small, anchor='lm')
+        lx += 140
 
     buf = io.BytesIO()
     img.save(buf, format='PNG')
@@ -109,12 +109,21 @@ def generate_calendar(year, month, bookings):
 
 @app.route('/calendar', methods=['POST'])
 def calendar_image():
-    data = request.json
-    year = int(data.get('year', datetime.now().year))
-    month = int(data.get('month', datetime.now().month))
-    bookings = data.get('bookings', [])
-    buf = generate_calendar(year, month, bookings)
-    return send_file(buf, mimetype='image/png')
+    try:
+        data = request.get_json(force=True)
+        print(f"Received data: {data}")
+        year = int(data.get('year', datetime.now().year))
+        month = int(data.get('month', datetime.now().month))
+        bookings = data.get('bookings', [])
+        buf = generate_calendar(year, month, bookings)
+        return send_file(buf, mimetype='image/png',
+                        as_attachment=False,
+                        download_name='calendar.png')
+    except Exception as e:
+        print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/')
 def health():
