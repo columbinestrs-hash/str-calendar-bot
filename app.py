@@ -9,7 +9,8 @@ import requests
 app = Flask(__name__)
 
 def generate_calendar(year, month, bookings):
-    cell_w, cell_h = 110, 80
+    cell_w = 110
+    cell_h = 80
     header_h = 60
     day_label_h = 30
     cols = 7
@@ -65,7 +66,7 @@ def generate_calendar(year, month, bookings):
                     })
                 d += timedelta(days=1)
         except Exception as e:
-            print(f"Booking parse error: {e}")
+            print("Booking parse error: " + str(e))
             continue
 
     today = datetime.now()
@@ -79,24 +80,102 @@ def generate_calendar(year, month, bookings):
 
         is_today = (day == today.day and month == today.month and year == today.year)
         border_color = '#378ADD' if is_today else '#E0E0E0'
-        draw.rectangle([x+1, y+1, x+cell_w-1, y+cell_h-1],
-                      outline=border_color, width=2 if is_today else 1)
-        draw.text((x + 8, y + 8), str(day),
-                 fill='#378ADD' if is_today else '#555555', font=font)
+        draw.rectangle(
+            [x + 1, y + 1, x + cell_w - 1, y + cell_h - 1],
+            outline=border_color,
+            width=2 if is_today else 1
+        )
+        draw.text(
+            (x + 8, y + 8),
+            str(day),
+            fill='#378ADD' if is_today else '#555555',
+            font=font
+        )
 
         if day in booking_map:
             for slot, bk in enumerate(booking_map[day]):
                 bar_y = y + 30 + slot * 18
                 bar_x_start = x + (4 if bk['is_start'] else 0)
                 bar_x_end = x + cell_w - (4 if bk['is_end'] else 0)
-                draw.rectangle([bar_x_start, bar_y, bar_x_end, bar_y + 14],
-                               fill=bk['color'])
+                draw.rectangle(
+                    [bar_x_start, bar_y, bar_x_end, bar_y + 14],
+                    fill=bk['color']
+                )
                 if bk['is_start']:
-                    draw.text((bar_x_start + 6, bar_y + 2), bk['label'],
-                             fill=bk['text_color'], font=font_small)
+                    draw.text(
+                        (bar_x_start + 6, bar_y + 2),
+                        bk['label'],
+                        fill=bk['text_color'],
+                        font=font_small
+                    )
 
     legend_y = img_h - 20
-    legends = [('#B5D4F4', 'New booking'), ('#C0DD97', 'Existing booking')]
+    legends = [
+        ('#B5D4F4', 'New booking'),
+        ('#C0DD97', 'Existing booking')
+    ]
     lx = padding
-    for color, label in legends:
-        draw.rectangle([lx, legend_y - 10, lx + 12, l
+    for leg_color, leg_label in legends:
+        draw.rectangle(
+            [lx, legend_y - 10, lx + 12, legend_y + 2],
+            fill=leg_color
+        )
+        draw.text(
+            (lx + 16, legend_y - 4),
+            leg_label,
+            fill='#888888',
+            font=font_small,
+            anchor='lm'
+        )
+        lx += 140
+
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf
+
+
+@app.route('/calendar', methods=['POST'])
+def calendar_image():
+    try:
+        data = request.get_json(force=True)
+        print("Received data: " + str(data))
+        year = int(data.get('year', datetime.now().year))
+        month = int(data.get('month', datetime.now().month))
+        bookings = data.get('bookings', [])
+        imgbb_key = data.get('imgbb_key', '')
+
+        buf = generate_calendar(year, month, bookings)
+        img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+
+        response = requests.post(
+            'https://api.imgbb.com/1/upload',
+            data={
+                'key': imgbb_key,
+                'image': img_b64,
+                'expiration': 600
+            }
+        )
+        result = response.json()
+        print("imgbb response: " + str(result))
+
+        if not result.get('success'):
+            return jsonify({'error': 'imgbb upload failed', 'detail': result}), 500
+
+        url = result['data']['url']
+        return jsonify({'url': url})
+
+    except Exception as e:
+        print("Error: " + str(e))
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/')
+def health():
+    return 'Calendar bot is running!'
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
