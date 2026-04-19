@@ -1,8 +1,10 @@
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, jsonify
 import calendar
 from PIL import Image, ImageDraw, ImageFont
 import io
 from datetime import datetime, timedelta
+import base64
+import requests
 
 app = Flask(__name__)
 
@@ -97,37 +99,4 @@ def generate_calendar(year, month, bookings):
     legends = [('#B5D4F4', 'New booking'), ('#C0DD97', 'Existing booking')]
     lx = padding
     for color, label in legends:
-        draw.rectangle([lx, legend_y - 10, lx + 12, legend_y + 2], fill=color)
-        draw.text((lx + 16, legend_y - 4), label, fill='#888888',
-                 font=font_small, anchor='lm')
-        lx += 140
-
-    buf = io.BytesIO()
-    img.save(buf, format='PNG')
-    buf.seek(0)
-    return buf
-
-@app.route('/calendar', methods=['POST'])
-def calendar_image():
-    try:
-        data = request.get_json(force=True)
-        print(f"Received data: {data}")
-        year = int(data.get('year', datetime.now().year))
-        month = int(data.get('month', datetime.now().month))
-        bookings = data.get('bookings', [])
-        buf = generate_calendar(year, month, bookings)
-        return send_file(buf, mimetype='image/png',
-                        as_attachment=False,
-                        download_name='calendar.png')
-    except Exception as e:
-        print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/')
-def health():
-    return 'Calendar bot is running!'
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+        draw.rectangle([lx, legend_y - 10, lx + 12, l
