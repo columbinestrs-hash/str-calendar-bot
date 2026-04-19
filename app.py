@@ -1,12 +1,14 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 import calendar
 from PIL import Image, ImageDraw, ImageFont
 import io
 from datetime import datetime, timedelta
-import base64
-import requests
+import uuid
 
 app = Flask(__name__)
+
+# In-memory store for generated images
+image_store = {}
 
 def generate_calendar(year, month, bookings):
     cell_w = 110
@@ -143,26 +145,15 @@ def calendar_image():
         year = int(data.get('year', datetime.now().year))
         month = int(data.get('month', datetime.now().month))
         bookings = data.get('bookings', [])
-        imgbb_key = data.get('imgbb_key', '')
 
         buf = generate_calendar(year, month, bookings)
-        img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
 
-        response = requests.post(
-            'https://api.imgbb.com/1/upload',
-            data={
-                'key': imgbb_key,
-                'image': img_b64,
-                'expiration': 600
-            }
-        )
-        result = response.json()
-        print("imgbb response: " + str(result))
+        image_id = str(uuid.uuid4())
+        image_store[image_id] = buf.getvalue()
 
-        if not result.get('success'):
-            return jsonify({'error': 'imgbb upload failed', 'detail': result}), 500
-
-        url = result['data']['url']
+        base_url = request.host_url.rstrip('/')
+        url = base_url + '/image/' + image_id
+        print("Image URL: " + url)
         return jsonify({'url': url})
 
     except Exception as e:
@@ -170,6 +161,14 @@ def calendar_image():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/image/<image_id>', methods=['GET'])
+def serve_image(image_id):
+    if image_id not in image_store:
+        return 'Image not found', 404
+    buf = io.BytesIO(image_store[image_id])
+    return send_file(buf, mimetype='image/png')
 
 
 @app.route('/')
